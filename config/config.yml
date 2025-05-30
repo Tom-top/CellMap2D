@@ -1,0 +1,48 @@
+# ===== General Paths =====
+working_dir: /home/hippocampus/data/tomek/test  # Root directory containing input data and metadata
+
+# ===== Data to Download =====
+resolution_level: 2                # Resolution level from Allen Brain Atlas raw data
+metadata_file: MapMySections_EntrantData.xlsx  # Metadata Excel file (dataset details)
+sheet_name: Test Set               # Excel sheet name with sample info
+dataset_selection: 1               # Dataset identifier for specific selection (if applicable)
+
+samples_to_process: ["1052620527.zarr"]           # List of sample IDs to process (use null to process all samples)
+
+default_auto_channel: 0            # Default imaging channel if metadata is unavailable
+default_seg_channel: 1             # Default segmentation channel if metadata missing/invalid
+
+# ===== Data Source (Allen Brain Atlas) =====
+species: mouse                     # Species: 'mouse' or 'rat'
+reference: template                # Reference type: 'template' (STPT) or 'nissl' atlas images
+
+# ===== Sectioning & Orientation =====
+single_sections: false             # Set true if each section comes from a different animal
+section_thickness: 10              # Slice thickness in voxels (z-depth)
+rotation_angle: 0                  # Rotation applied to slices (0, 90, 180, 270 degrees)
+mirror: true                       # Mirror spatial transcriptomics data horizontally (hemisphere alignment)
+
+# ===== Slice Prediction (DeepSlice) =====
+propagate_angles: true             # Normalize predicted angles across slices
+enforce_index_order: true          # Ensure slices follow correct anatomical order
+enforce_index_spacing: true        # Fill gaps by estimating missing slice positions
+
+# ===== Slice Selection =====
+slices_to_process: null            # Specific slices to process (use null for all slices)
+
+# ===== Resolution & Scaling =====
+downsampling_factor: 10            # Downsampling applied during registration and visualization
+raw_data_max: 255                  # Maximum pixel intensity threshold (for visualization)
+
+# ===== Processing Options =====
+default_non_linear: false          # Registration mode: SyNOnly (false) vs. SyN+Affine (true)
+
+# ===== Visualization =====
+cell_color: subclass_color         # Coloring scheme for cells: 'cluster_color', 'subclass_color', or specific gene (e.g., 'Glp1r_gene')
+raw_data_cmap: "bone_r"            # Colormap used for visualizing raw image data
+cell_size: 0.1                     # Marker size for spatial transcriptomics cell visualization
+
+# Density analysis
+density_downsampling: 4  #
+kde_bandwidth_mm: 0.2
+voxel_size_mm: 0.025
