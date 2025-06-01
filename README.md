@@ -180,8 +180,8 @@ definitive or comprehensive classification algorithm
 We define a binary spatial mask $`M \subset \Omega`$, where $`\Omega`$ is the full brain volume, based on high-signal regions in the subclass KDE:
 
 $$
-M = \left\{ \mathbf{x} \in \Omega \ \bigg| \ K_{\text{subclass}}(\mathbf{x}) > \tau \cdot \max_{\mathbf{x} \in \Omega}
-K_{\text{subclass}}(\mathbf{x}) \right\}
+M = \bigl\{ \mathbf{x} \in \Omega \mid K_{\text{subclass}}(\mathbf{x}) > \tau \cdot \max_{\mathbf{x} \in \Omega} 
+K_{\text{subclass}}(\mathbf{x}) \bigr\}
 $$
 
 with a default threshold $`\tau = 0.05`$.
