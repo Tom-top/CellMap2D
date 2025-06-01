@@ -14,6 +14,8 @@ However, since our goal was to infer the identity of labeled cells, we determine
 suitable for this purpose. These volumes are based on global fluorescence intensity rather than true cell segmentation, 
 meaning much of the signal originates from fiber tracts, dendrites, and other non-somatic structures.
 
+---
+
 ## 📦 Installation
 
 ### 1. Clone the repository
@@ -30,10 +32,14 @@ conda env create -f env/env.yml
 conda activate CellMap2D
 ```
 
+---
+
 
 ## 🧩 Step-by-step overview of the pipeline
 
 Below is a high-level, step-by-step overview of the pipeline we developed for this challenge:
+
+---
 
 1. **Edit the configuration file**
 
@@ -44,6 +50,8 @@ Each entry in the file is annotated to explain what the parameters do.
 [NOTE] All the future parts of the pipeline can be executed sequentially by running the `n_*.py` scripts in the 
 `scripts/` folder.
 
+---
+
 2. **Download raw data**
 
 The first step is to download the raw .zarr data. Since the data is at very high resolution (hundreds of Gb per brain)
@@ -53,6 +61,8 @@ The idea being to have a dataset of a manageable size, with enough resolution to
 ```bash
 python scripts/1_download_samples.py
 ```
+
+---
 
 3. **Segment cells of tissue sections**
 
@@ -70,6 +80,8 @@ excellent results, they were too computationally intensive to complete within th
 python scripts/2_segment_samples.py
 ```
 
+---
+
 4. **Prepare samples for registration**
 
 The next step is to generate downsampled version of the autofluorescence images (either the red or green channel 
@@ -80,6 +92,8 @@ parameter controls the level of downsampling of the original data.
 python scripts/3_prepare_samples.py
 ```
 
+---
+
 5. **Anchoring the slice in the 3D reference space**
 
 Once downsampled, we run [DeepSlice](https://github.com/PolarBean/DeepSlice) to anchor each slice in the 3D reference
@@ -88,6 +102,8 @@ Once downsampled, we run [DeepSlice](https://github.com/PolarBean/DeepSlice) to 
 ```bash
 python scripts/4_run_deepslice_prediction.py
 ```
+
+---
 
 6. **Register and refine alignment in 2D using**
 
@@ -110,6 +126,8 @@ shown in blue.
 
 ![figure_1](images/figure_1.png)
 
+---
+
 7. **Generate density maps for the spatial transcriptomics subpopulations**
 
 Once all cells have been segmented and each slice registered to the reference atlas, we obtain a set of **3D registered
@@ -127,22 +145,113 @@ The first step is to generate an approximation of the KDE for each spatial trans
 python scripts/6_generate_subclass_densities.py
 ```
 
+---
+
 8. **Generate density maps from your segmented datasets**
 
-We then build a similar map the the segmented datasets:
+We then build a similar map the segmented datasets:
 
 ```bash
 python scripts/7_generate_sample_densities.py
 ```
 
+---
+
 9. **Rank populations by similarity to the sample**
 
-To infer cell identity, we compute a **similarity score** between the test KDE (from segmented cells) and each known 
-subclass KDE. This score combines two components: the **mean squared error (MSE)**, which measures how closely the 
-spatial distributions align within relevant regions, and a **penalty term** that discourages false positives by 
-penalizing signal in the test KDE where the subclass KDE shows little or none. The final similarity score is the 
-inverse of the sum of MSE and penalty, so that higher scores indicate better matches. This allows us to rank 
-subclasses based on how well their spatial patterns match the observed data.
+To infer the most likely transcriptomic identity of segmented cells, we compute a similarity score between the **KDE
+(Kernel Density Estimate)** of the test sample and each subclass KDE from the ABC Atlas.
+
+Each KDE represents the spatial density of a cell population in the CCFv3 reference space. To evaluate how well a 
+subclass KDE matches the test KDE, we use a custom score that captures both alignment within biologically relevant 
+regions and penalization of spurious signal elsewhere.
+
+While this metric offers a practical and interpretable approach for ranking subclasses, it remains relatively simple. 
+Notably, it assumes that the labeled cells in the test dataset represent the full underlying population, 
+rather than a selective or biased subset. While this assumption may be acceptable within the scope of the current 
+challenge, it limits the method’s applicability in more general scenarios where only a subset of cells is labeled.
+As such, the metric should be viewed as a heuristic — valuable for generating hypotheses, but not sufficient as a 
+definitive or comprehensive classification algorithm
+
+### Similarity Score Formula
+
+#### 1. **Mask Definition**
+
+We define a binary spatial mask $`M \subset \Omega`$, where $`\Omega`$ is the full brain volume, based on high-signal regions in the subclass KDE:
+
+$$
+M = \left\{ \mathbf{x} \in \Omega \ \bigg| \ K_{\text{subclass}}(\mathbf{x}) > \tau \cdot \max_{\mathbf{x} \in \Omega}
+K_{\text{subclass}}(\mathbf{x}) \right\}
+$$
+
+with a default threshold $`\tau = 0.05`$.
+
+---
+
+#### 2. **Mean Squared Error (MSE)**
+
+We compute the mean squared error between the subclass KDE and the test KDE within the mask:
+
+$$
+\text{MSE} = \frac{1}{|M|} \sum_{\mathbf{x} \in M} \left( K_{\text{test}}(\mathbf{x}) - 
+K_{\text{subclass}}(\mathbf{x}) \right)^2
+$$
+
+This measures how closely the two distributions align spatially in biologically relevant regions.
+
+---
+
+#### 3. **False Positive Penalty**
+
+To penalize signal in the subclass KDE where the test KDE is near zero, we define a penalty term:
+
+$$
+\text{Penalty} =
+\frac{
+\sum\limits_{\mathbf{x} \in M \cap Z} K_{\text{subclass}}(\mathbf{x})
+}{
+\sum\limits_{\mathbf{x} \in M} K_{\text{subclass}}(\mathbf{x}) + \varepsilon
+}
+$$
+
+where:
+
+- $`Z = \left\{ \mathbf{x} \in \Omega \ \big| \ K_{\text{test}}(\mathbf{x}) < \delta \cdot \max_{\mathbf{x} \in \Omega} K_{\text{test}}(\mathbf{x}) \right\}`$
+- $`\delta = 0.01`$ is the low-signal threshold.
+- $`\varepsilon = 10^{-8}`$ prevents division by zero.
+
+This encourages sparsity and discourages matching in noisy or empty regions.
+
+---
+
+#### 4. **Final Score and Match Score**
+
+We combine the two terms:
+
+$$
+\text{Score}_{\text{final}} = \text{MSE} + \text{Penalty}
+$$
+
+To improve interpretability (so that higher is better), we define the match score as:
+
+$$
+\text{Match Score} = \frac{1}{\text{Score}_{\text{final}} + \varepsilon}
+$$
+
+---
+
+### Interpretation
+
+- A **lower MSE** means better alignment in areas where the subclass is expected to be.
+- A **lower penalty** means less subclass signal in biologically implausible regions.
+- A **higher match score** indicates a better spatial match between the segmented cells and the candidate subclass.
+
+This scoring system allows us to **rank all transcriptomic subclasses** based on how well they explain the observed 
+spatial distribution of segmented cells.
+
+
+
+To run this section:
 
 ```bash
 python scripts/8_rank_sample_vs_subclass_densities.py
@@ -151,6 +260,16 @@ python scripts/8_rank_sample_vs_subclass_densities.py
 Here is a figure outlining the steps integrating the ABC-atlas with the segmented and registered 2D data:
 
 ![figure_2](images/figure_2.png)
+
+---
+
+This project is part of a **forthcoming publication (Topilko T. et al., forthcoming)** that includes a multimodal
+whole-brain mouse viewer. Here, we demonstrate some of the tool’s capabilities using the dataset 
+provided for this challenge:
+
+[![Watch the video](images/miniature.png)](https://youtu.be/X2A_2aCa4wg)
+
+---
 
 ## 📚 References
 
@@ -161,7 +280,10 @@ DeepSlice: [Carey H. et al., Nature Communications, 2023](https://www.nature.com
 ABC Atlas: [Yao Z. et al., Nature, 2023](https://www.nature.com/articles/s41586-023-06812-z);
 [Zhang M. et al., Nature, 2023](https://www.nature.com/articles/s41586-023-06808-9)
 
-## ✍️ Author
+---
 
-Developed by Thomas Topilko and Silas Dalum Larsen, 2025.
+## ✍️ Authors
+
+Developed by [Thomas Topilko](https://scholar.google.com/citations?user=c8-kpPQAAAAJ&hl=en) 
+and [Silas Dalum Larsen](https://in.ku.dk/employees/?pure=en/persons/568013), 2025.
 
